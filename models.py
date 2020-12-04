@@ -170,9 +170,9 @@ class DigitClassificationModel(object):
     def __init__(self):
         # Initialize your model parameters here
         "*** YOUR CODE HERE ***"
-        sizes = [784, 500, 10]
-        self.batch_size = 20
-        self.step_size = 0.04
+        sizes = [784, 200, 200, 10]
+        self.batch_size = 100
+        self.step_size = 0.2
         self.acceptable_loss = 0.98
 
         # initialize the layers and weights
@@ -241,17 +241,20 @@ class DigitClassificationModel(object):
                 # compute lossssss
                 batch_loss = self.get_loss(x, y)
                 # save loss for calculating average loss later
-                #losses.append(nn.as_scalar(batch_loss))
+                # losses.append(nn.as_scalar(batch_loss))
                 # get them gradients
                 gradients = nn.gradients(batch_loss, self.layers)
                 # update the weights using gradients
                 for i in range(len(self.layers)):
                     self.layers[i].update(gradients[i], -1 * self.step_size)
             # stop loop when loss is acceptable
-            # total_loss = sum(losses)
+            # avg = sum(losses)/len(losses)
             # print('epoch: ' + str(epoch))
-            # print('loss: ' + str(total_loss))
+            # print('loss: ' + str(avg))
             accuracy = dataset.get_validation_accuracy()
+            # print('val acc: '+ str(accuracy))
+
+            self.step_size = max(self.step_size * 0.95, 0.01)
             if accuracy >= self.acceptable_loss:
                 # print('we are ok here')
                 break
