@@ -134,8 +134,6 @@ class RegressionModel(object):
             epoch += 1
 
             for x, y in dataset.iterate_once(self.batch_size):
-                # make predicc
-                output = self.run(x)
                 # compute lossssss
                 batch_loss = self.get_loss(x, y)
                 # save loss for calculating average loss later
@@ -172,6 +170,17 @@ class DigitClassificationModel(object):
     def __init__(self):
         # Initialize your model parameters here
         "*** YOUR CODE HERE ***"
+        sizes = [784, 500, 10]
+        self.batch_size = 20
+        self.step_size = 0.04
+        self.acceptable_loss = 0.98
+
+        # initialize the layers and weights
+        self.layers = []
+        for i in range(1, len(sizes)):
+            # each layer is a tuple of (weights, bias)
+            self.layers.append(nn.Parameter(sizes[i-1], sizes[i]))
+            self.layers.append(nn.Parameter(1, sizes[i]))
 
     def run(self, x):
         """
@@ -188,6 +197,19 @@ class DigitClassificationModel(object):
                 (also called logits)
         """
         "*** YOUR CODE HERE ***"
+        is_bias = False
+        for layer in self.layers[:-2]:
+            if not is_bias:
+                x = nn.Linear(x, layer)
+                is_bias = True
+                continue
+            x = nn.AddBias(x, layer)
+            x = nn.ReLU(x)
+            is_bias = False
+        # for the last layer, no relu, just multiply and bias
+        x = nn.Linear(x, self.layers[-2])
+        output = nn.AddBias(x, self.layers[-1])
+        return output
 
     def get_loss(self, x, y):
         """
@@ -203,12 +225,37 @@ class DigitClassificationModel(object):
         Returns: a loss node
         """
         "*** YOUR CODE HERE ***"
+        return nn.SoftmaxLoss(self.run(x), y)
 
     def train(self, dataset):
         """
         Trains the model.
         """
         "*** YOUR CODE HERE ***"
+        epoch = 0
+        while True:
+            # losses = []
+            epoch += 1
+
+            for x, y in dataset.iterate_once(self.batch_size):
+                # compute lossssss
+                batch_loss = self.get_loss(x, y)
+                # save loss for calculating average loss later
+                #losses.append(nn.as_scalar(batch_loss))
+                # get them gradients
+                gradients = nn.gradients(batch_loss, self.layers)
+                # update the weights using gradients
+                for i in range(len(self.layers)):
+                    self.layers[i].update(gradients[i], -1 * self.step_size)
+            # stop loop when loss is acceptable
+            # total_loss = sum(losses)
+            # print('epoch: ' + str(epoch))
+            # print('loss: ' + str(total_loss))
+            accuracy = dataset.get_validation_accuracy()
+            if accuracy >= self.acceptable_loss:
+                # print('we are ok here')
+                break
+
 
 class LanguageIDModel(object):
     """
