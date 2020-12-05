@@ -278,16 +278,28 @@ class LanguageIDModel(object):
 
         # Initialize your model parameters here
         "*** YOUR CODE HERE ***"
-        sizes = [self.num_chars, 200, 200, len(self.languages)]
-        self.batch_size = 200
-        self.step_size = 0.2
-        self.acceptable_loss = 0.83
+        recurrent_sizes = [self.num_chars, 40, 40, 40, self.num_chars]
+        forward_sizes = [self.num_chars, 40, 20, 10, len(self.languages)]
+        self.batch_size = 50
+        self.step_size = 0.02
+        self.acceptable_loss = 0.88
 
         # initialize the layers and weights
-        self.layers = []
-        for i in range(1, len(sizes)):
+        self.recurrentlayers = []
+        self.forwardlayers = []
+        self.w_for_newchar = nn.Parameter(self.num_chars, recurrent_sizes[1])
+        self.w_for_h = nn.Parameter(recurrent_sizes[-1], recurrent_sizes[1])
+        self.first_bias = nn.Parameter(1, recurrent_sizes[1])
+        self.h_size = recurrent_sizes[-1]
+        for i in range(2, len(recurrent_sizes)):
             # each layer is a tuple of (weights, bias)
-            self.layers.append(nn.Parameter(sizes[i-1], sizes[i]))
+            self.recurrentlayers.append(nn.Parameter(recurrent_sizes[i-1], recurrent_sizes[i]))
+            self.recurrentlayers.append(nn.Parameter(1, recurrent_sizes[i]))
+        for i in range(1, len(forward_sizes)):
+            # each layer is a tuple of (weights, bias)
+            self.forwardlayers.append(nn.Parameter(forward_sizes[i-1], forward_sizes[i]))
+            self.forwardlayers.append(nn.Parameter(1, forward_sizes[i]))
+
 
     def run(self, xs):
         """
@@ -319,11 +331,36 @@ class LanguageIDModel(object):
                 (also called logits)
         """
         "*** YOUR CODE HERE ***"
-        h = nn.Linear(xs[0], self.layers[0])
-        for i in range(1, len(xs)):
-            x = xs[i]
-            h = nn.Add(nn.Linear(x, self.layers[0]), nn.Linear(h, self.layers[1]))
-        return nn.Linear(h, self.layers[2])
+        def run_helper(x, layers):
+            is_bias = False
+            for layer in layers[:-2]:
+                if not is_bias:
+                    x = nn.Linear(x, layer)
+                    is_bias = True
+                    continue
+                x = nn.AddBias(x, layer)
+                x = nn.ReLU(x)
+                is_bias = False
+            # for the last layer, no relu, just multiply and bias
+            x = nn.Linear(x, layers[-2])
+            output = nn.AddBias(x, layers[-1])
+            return output
+
+        h = None
+        for x in xs:
+            if not h:
+                z = nn.Linear(x, self.w_for_newchar)
+                z = nn.AddBias(z, self.first_bias)
+                h = run_helper(z, self.recurrentlayers)
+                continue
+            z = nn.Add(nn.Linear(x, self.w_for_newchar), nn.Linear(h, self.w_for_h))
+            z = nn.AddBias(z, self.first_bias)
+            h = run_helper(z, self.recurrentlayers)
+
+        output = run_helper(h, self.forwardlayers)
+
+        return output
+
 
     def get_loss(self, xs, y):
         """
@@ -349,27 +386,29 @@ class LanguageIDModel(object):
         "*** YOUR CODE HERE ***"
         epoch = 0
         while True:
-            # losses = []
+            losses = []
             epoch += 1
 
             for x, y in dataset.iterate_once(self.batch_size):
                 # compute lossssss
                 batch_loss = self.get_loss(x, y)
                 # save loss for calculating average loss later
-                # losses.append(nn.as_scalar(batch_loss))
+                losses.append(nn.as_scalar(batch_loss))
                 # get them gradients
-                gradients = nn.gradients(batch_loss, self.layers)
+                all_weights = [self.w_for_newchar, self.w_for_h, self.first_bias] + \
+                    self.recurrentlayers + self.forwardlayers
+                gradients = nn.gradients(batch_loss, all_weights)
                 # update the weights using gradients
-                for i in range(len(self.layers)):
-                    self.layers[i].update(gradients[i], -1 * self.step_size)
+                for i in range(len(all_weights)):
+                    all_weights[i].update(gradients[i], -1 * self.step_size)
             # stop loop when loss is acceptable
-            # avg = sum(losses)/len(losses)
-            # print('epoch: ' + str(epoch))
-            # print('loss: ' + str(avg))
+            avg = sum(losses)/len(losses)
+            print('epoch: ' + str(epoch))
+            print('loss: ' + str(avg))
             accuracy = dataset.get_validation_accuracy()
-            # print('val acc: '+ str(accuracy))
+            print('val acc: '+ str(accuracy))
 
-            self.step_size = max(self.step_size * 0.95, 0.01)
+            # self.step_size = max(self.step_size * 0.95, 0.01)
             if accuracy >= self.acceptable_loss:
                 # print('we are ok here')
                 break
